@@ -1,0 +1,95 @@
+import time
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from bs4 import BeautifulSoup
+import pandas as pd
+
+# Указываем путь к geckodriver
+geckodriver_path = 'C:/path/to/geckodriver.exe'  # Укажи правильный путь к geckodriver
+
+# Указываем путь к Firefox (если он установлен не в стандартной папке)
+firefox_binary_path = 'C:/Program Files/Mozilla Firefox/firefox.exe'  # Укажи путь к Firefox
+
+# Настройка Firefox
+options = Options()
+# Удаляем опцию "--headless", чтобы увидеть браузер
+# options.add_argument("--headless")  # Работает без открытия окна браузера
+
+# Указываем путь к Firefox через binary_location
+options.binary_location = firefox_binary_path  # Вместо FirefoxBinary
+
+# Создание объекта Service для geckodriver
+service = Service(executable_path=geckodriver_path)
+
+# Настройка драйвера Firefox с указанием пути к geckodriver и Firefox
+driver = webdriver.Firefox(service=service, options=options)
+
+# Открытие сайта
+url = "https://b2b.moysklad.ru/public/ZcTx086e3Wog/catalog"
+driver.get(url)
+
+# Функция прокрутки страницы с задержкой
+def scroll_page():
+    last_height = driver.execute_script("return document.body.scrollHeight")
+    while True:
+        # Прокрутка страницы вниз
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(3)  # Задержка для подгрузки данных
+        new_height = driver.execute_script("return document.body.scrollHeight")
+        if new_height == last_height:
+            break
+        last_height = new_height
+
+# Функция для нажатия кнопки "Еще 50 товаров"
+def click_load_more_button():
+    try:
+        # Обновленный XPath для поиска кнопки
+        button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'tss-18p7hf1-button') and contains(., 'Еще 50 товаров')]"))
+        )
+        button.click()
+        time.sleep(2)  # Небольшая задержка, чтобы загрузились новые товары
+    except Exception as e:
+        print(f"Кнопка не найдена или не кликабельна: {e}")
+
+# Прокручиваем страницу и нажимаем на кнопку
+scroll_page()
+click_load_more_button()  # Нажимаем на кнопку подгрузки товаров
+
+# Повторяем процесс прокрутки и нажатия кнопки несколько раз
+for _ in range(80):  # Прокручиваем и кликаем 5 раз, можно увеличить
+    scroll_page()
+    click_load_more_button()
+
+# Извлечение данных с помощью BeautifulSoup
+soup = BeautifulSoup(driver.page_source, 'html.parser')
+
+# Сбор данных о товарах
+products = []
+product_cards = soup.find_all('div', {'data-testid': '-productRowCard-default'})
+
+for card in product_cards:
+    # Извлекаем название товара
+    name_tag = card.find('p', {'class': 'tss-frva5t-text'})
+    name = name_tag.text.strip() if name_tag else None
+    
+    # Извлекаем цену товара
+    price_tag = card.find('p', {'class': 'tss-194vplj-text'})
+    price = price_tag.text.strip() if price_tag else None
+    
+    # Пропускаем товары без названия или цены
+    if name and price:
+        products.append({'Name': name, 'Price': price})
+
+# Закрытие браузера
+driver.quit()
+
+# Сохранение данных в Excel
+df = pd.DataFrame(products)
+df.to_excel('products.xlsx', index=False)
+
+print(f"Парсинг завершен, данные сохранены в файл 'products.xlsx'.")
